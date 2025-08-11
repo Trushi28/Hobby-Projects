@@ -161,7 +161,7 @@ A fully-featured 15-puzzle game with professional GUI, timer, and game statistic
 
 **🎥 See it in action:**
 
-![Puzzle Demo](Assets/recording.mp4)
+![Puzzle Demo](./Assets/recording.mp4)
 #### Features
 - 🧩 Classic 15-puzzle gameplay (4x4 grid)
 - ⏱️ Real-time timer tracking
