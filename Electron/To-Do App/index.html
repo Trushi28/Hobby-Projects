@@ -1,0 +1,997 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard & To-Do</title>
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline';">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --primary: #6366f1;
+            --primary-light: #818cf8;
+            --primary-dark: #4338ca;
+            --secondary: #ec4899;
+            --accent: #06b6d4;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --dark: #1e1b4b;
+            --dark-light: #312e81;
+            --light: #f8fafc;
+            --gray: #64748b;
+            --gray-light: #e2e8f0;
+            --white: #ffffff;
+            --gradient: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+            --glass: rgba(255, 255, 255, 0.1);
+            --glass-border: rgba(255, 255, 255, 0.2);
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--gradient);
+            min-height: 100vh;
+            color: var(--white);
+            overflow-x: hidden;
+            -webkit-user-select: none;
+            user-select: none;
+        }
+
+        .app-container {
+            display: grid;
+            grid-template-columns: 300px 1fr;
+            min-height: 100vh;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .sidebar {
+            background: var(--glass);
+            backdrop-filter: blur(20px);
+            border-right: 1px solid var(--glass-border);
+            padding: 2rem 1.5rem;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .sidebar::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 200px;
+            background: linear-gradient(180deg, rgba(255, 255, 255, 0.1) 0%, transparent 100%);
+            pointer-events: none;
+        }
+
+        .logo {
+            font-size: 1.75rem;
+            font-weight: 800;
+            color: var(--white);
+            margin-bottom: 2.5rem;
+            text-align: center;
+            text-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+            letter-spacing: -0.5px;
+        }
+
+        .nav-menu {
+            list-style: none;
+            margin-bottom: 2rem;
+        }
+
+        .nav-item {
+            display: flex;
+            align-items: center;
+            padding: 1rem 1.25rem;
+            margin: 0.5rem 0;
+            border-radius: 16px;
+            color: rgba(255, 255, 255, 0.8);
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+            font-weight: 500;
+        }
+
+        .nav-item:hover, .nav-item.active {
+            background: rgba(255, 255, 255, 0.15);
+            color: var(--white);
+            transform: translateX(8px) scale(1.02);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+        }
+
+        .nav-item::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            width: 4px;
+            background: linear-gradient(180deg, var(--primary-light), var(--secondary));
+            transform: scaleY(0);
+            transition: transform 0.3s ease;
+        }
+
+        .nav-item.active::before {
+            transform: scaleY(1);
+        }
+
+        .nav-icon {
+            width: 20px;
+            height: 20px;
+            margin-right: 1rem;
+            opacity: 0.8;
+        }
+
+        .theme-selector {
+            margin-top: auto;
+            padding: 1.5rem;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 16px;
+            border: 1px solid var(--glass-border);
+        }
+
+        .theme-title {
+            font-size: 0.875rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            color: rgba(255, 255, 255, 0.9);
+        }
+
+        .theme-options {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 0.5rem;
+        }
+
+        .theme-option {
+            width: 40px;
+            height: 40px;
+            border-radius: 12px;
+            cursor: pointer;
+            border: 2px solid transparent;
+            transition: all 0.3s ease;
+            position: relative;
+        }
+
+        .theme-option.active {
+            border-color: var(--white);
+            transform: scale(1.1);
+        }
+
+        .theme-purple { background: linear-gradient(135deg, #6366f1, #8b5cf6); }
+        .theme-blue { background: linear-gradient(135deg, #3b82f6, #06b6d4); }
+        .theme-pink { background: linear-gradient(135deg, #ec4899, #f43f5e); }
+        .theme-green { background: linear-gradient(135deg, #10b981, #059669); }
+        .theme-orange { background: linear-gradient(135deg, #f59e0b, #ea580c); }
+        .theme-dark { background: linear-gradient(135deg, #374151, #1f2937); }
+
+        .main-content {
+            padding: 2rem;
+            overflow-y: auto;
+            position: relative;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+        }
+
+        .greeting {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--white);
+            margin-bottom: 0.5rem;
+        }
+
+        .date {
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 1rem;
+        }
+
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+            margin-bottom: 2rem;
+        }
+
+        .card {
+            background: var(--glass);
+            backdrop-filter: blur(20px);
+            border-radius: 24px;
+            border: 1px solid var(--glass-border);
+            padding: 2rem;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            border-color: rgba(255, 255, 255, 0.3);
+        }
+
+        .card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.5), transparent);
+        }
+
+        .card-title {
+            font-size: 1.25rem;
+            font-weight: 700;
+            margin-bottom: 1.5rem;
+            color: var(--white);
+            display: flex;
+            align-items: center;
+        }
+
+        .card-icon {
+            width: 24px;
+            height: 24px;
+            margin-right: 0.75rem;
+            opacity: 0.9;
+        }
+
+        .todo-section {
+            grid-column: 1 / -1;
+        }
+
+        .todo-input-container {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        .todo-input {
+            flex: 1;
+            padding: 1rem 1.5rem;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid var(--glass-border);
+            border-radius: 16px;
+            color: var(--white);
+            font-size: 1rem;
+            backdrop-filter: blur(10px);
+            transition: all 0.3s ease;
+        }
+
+        .todo-input:focus {
+            outline: none;
+            border-color: var(--primary-light);
+            background: rgba(255, 255, 255, 0.15);
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+        }
+
+        .todo-input::placeholder {
+            color: rgba(255, 255, 255, 0.5);
+        }
+
+        .btn {
+            padding: 1rem 2rem;
+            border: none;
+            border-radius: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            backdrop-filter: blur(10px);
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--primary), var(--primary-light));
+            color: var(--white);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px rgba(99, 102, 241, 0.4);
+        }
+
+        .todo-list {
+            space-y: 1rem;
+        }
+
+        .todo-item {
+            display: flex;
+            align-items: center;
+            padding: 1.25rem;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 16px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            margin-bottom: 1rem;
+            transition: all 0.3s ease;
+        }
+
+        .todo-item:hover {
+            background: rgba(255, 255, 255, 0.1);
+            transform: translateX(4px);
+        }
+
+        .todo-checkbox {
+            width: 20px;
+            height: 20px;
+            border: 2px solid var(--glass-border);
+            border-radius: 6px;
+            margin-right: 1rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .todo-checkbox.checked {
+            background: var(--success);
+            border-color: var(--success);
+        }
+
+        .todo-text {
+            flex: 1;
+            color: var(--white);
+            font-size: 1rem;
+            transition: all 0.3s ease;
+        }
+
+        .todo-text.completed {
+            text-decoration: line-through;
+            color: rgba(255, 255, 255, 0.5);
+        }
+
+        .todo-actions {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .btn-small {
+            padding: 0.5rem 1rem;
+            font-size: 0.875rem;
+            border-radius: 12px;
+        }
+
+        .btn-danger {
+            background: linear-gradient(135deg, var(--danger), #dc2626);
+            color: var(--white);
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+        }
+
+        .stat-card {
+            text-align: center;
+            padding: 1.5rem;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 16px;
+            border: 1px solid var(--glass-border);
+        }
+
+        .stat-number {
+            font-size: 2rem;
+            font-weight: 800;
+            color: var(--primary-light);
+            margin-bottom: 0.5rem;
+        }
+
+        .stat-label {
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 0.875rem;
+            font-weight: 500;
+        }
+
+        .floating-action-btn {
+            position: fixed;
+            bottom: 2rem;
+            right: 2rem;
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--secondary), var(--primary));
+            border: none;
+            color: var(--white);
+            font-size: 1.5rem;
+            cursor: pointer;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            z-index: 1000;
+        }
+
+        .floating-action-btn:hover {
+            transform: scale(1.1) rotate(90deg);
+            box-shadow: 0 15px 40px rgba(236, 72, 153, 0.4);
+        }
+
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(10px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 2000;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.3s ease;
+        }
+
+        .modal-overlay.active {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .modal {
+            background: var(--glass);
+            backdrop-filter: blur(20px);
+            border-radius: 24px;
+            border: 1px solid var(--glass-border);
+            padding: 2rem;
+            max-width: 500px;
+            width: 90%;
+            transform: scale(0.9);
+            transition: transform 0.3s ease;
+        }
+
+        .modal-overlay.active .modal {
+            transform: scale(1);
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        @media (max-width: 768px) {
+            .app-container {
+                grid-template-columns: 1fr;
+            }
+            
+            .sidebar {
+                display: none;
+            }
+            
+            .dashboard-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* Scrollbar Styling */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.3);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.5);
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <aside class="sidebar">
+            <div class="logo">✨ Dashboard</div>
+            
+            <ul class="nav-menu">
+                <li class="nav-item active" data-view="dashboard">
+                    <svg class="nav-icon" fill="currentColor" viewBox="0 0 20 20">
+                        <path d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zM3 10a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H4a1 1 0 01-1-1v-6zM14 9a1 1 0 00-1 1v6a1 1 0 001 1h2a1 1 0 001-1v-6a1 1 0 00-1-1h-2z"></path>
+                    </svg>
+                    Dashboard
+                </li>
+                <li class="nav-item" data-view="todos">
+                    <svg class="nav-icon" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clip-rule="evenodd"></path>
+                    </svg>
+                    To-Do List
+                </li>
+                <li class="nav-item" data-view="analytics">
+                    <svg class="nav-icon" fill="currentColor" viewBox="0 0 20 20">
+                        <path d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5a1 1 0 01-1 1H3a1 1 0 01-1-1v-5zM8 7a1 1 0 011-1h2a1 1 0 011 1v9a1 1 0 01-1 1H9a1 1 0 01-1-1V7zM14 4a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1h-2a1 1 0 01-1-1V4z"></path>
+                    </svg>
+                    Analytics
+                </li>
+                <li class="nav-item" data-view="settings">
+                    <svg class="nav-icon" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd"></path>
+                    </svg>
+                    Settings
+                </li>
+            </ul>
+
+            <div class="theme-selector">
+                <div class="theme-title">Choose Theme</div>
+                <div class="theme-options">
+                    <div class="theme-option theme-purple active" data-theme="purple"></div>
+                    <div class="theme-option theme-blue" data-theme="blue"></div>
+                    <div class="theme-option theme-pink" data-theme="pink"></div>
+                    <div class="theme-option theme-green" data-theme="green"></div>
+                    <div class="theme-option theme-orange" data-theme="orange"></div>
+                    <div class="theme-option theme-dark" data-theme="dark"></div>
+                </div>
+            </div>
+        </aside>
+
+        <main class="main-content">
+            <!-- Dashboard View -->
+            <div id="dashboard-view" class="view">
+                <div class="header">
+                    <div>
+                        <h1 class="greeting">Good morning, User!</h1>
+                        <p class="date" id="current-date"></p>
+                    </div>
+                </div>
+
+                <div class="dashboard-grid">
+                    <div class="card">
+                        <h2 class="card-title">
+                            <svg class="card-icon" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clip-rule="evenodd"></path>
+                            </svg>
+                            Quick Tasks
+                        </h2>
+                        <div class="stats-grid">
+                            <div class="stat-card">
+                                <div class="stat-number" id="total-todos">0</div>
+                                <div class="stat-label">Total Tasks</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-number" id="completed-todos">0</div>
+                                <div class="stat-label">Completed</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <h2 class="card-title">
+                            <svg class="card-icon" fill="currentColor" viewBox="0 0 20 20">
+                                <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                            </svg>
+                            Today's Progress
+                        </h2>
+                        <div class="progress-info">
+                            <div style="font-size: 2rem; margin-bottom: 1rem;" id="completion-percentage">0%</div>
+                            <div style="height: 8px; background: rgba(255,255,255,0.2); border-radius: 4px; overflow: hidden;">
+                                <div id="progress-bar" style="height: 100%; background: linear-gradient(90deg, var(--success), var(--accent)); width: 0%; transition: width 0.3s ease;"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <h2 class="card-title">
+                            <svg class="card-icon" fill="currentColor" viewBox="0 0 20 20">
+                                <path d="M13 6a3 3 0 11-6 0 3 3 0 016 0zM18 8a2 2 0 11-4 0 2 2 0 014 0zM14 15a4 4 0 00-8 0v3h8v-3z"></path>
+                            </svg>
+                            Productivity Score
+                        </h2>
+                        <div style="text-align: center;">
+                            <div style="font-size: 3rem; font-weight: 800; margin-bottom: 0.5rem;" id="productivity-score">85</div>
+                            <div style="color: rgba(255,255,255,0.7);">Great work today!</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Todo View -->
+            <div id="todos-view" class="view hidden">
+                <div class="header">
+                    <div>
+                        <h1 class="greeting">Your Tasks</h1>
+                        <p class="date">Organize your day efficiently</p>
+                    </div>
+                </div>
+
+                <div class="card todo-section">
+                    <h2 class="card-title">
+                        <svg class="card-icon" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd"></path>
+                        </svg>
+                        Add New Task
+                    </h2>
+                    
+                    <div class="todo-input-container">
+                        <input type="text" class="todo-input" id="todo-input" placeholder="What needs to be done?">
+                        <button class="btn btn-primary" id="add-todo-btn">Add Task</button>
+                    </div>
+
+                    <div class="todo-list" id="todo-list">
+                        <!-- Todos will be dynamically added here -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Analytics View -->
+            <div id="analytics-view" class="view hidden">
+                <div class="header">
+                    <div>
+                        <h1 class="greeting">Analytics</h1>
+                        <p class="date">Track your productivity trends</p>
+                    </div>
+                </div>
+
+                <div class="dashboard-grid">
+                    <div class="card">
+                        <h2 class="card-title">Weekly Overview</h2>
+                        <div class="stats-grid">
+                            <div class="stat-card">
+                                <div class="stat-number">24</div>
+                                <div class="stat-label">Tasks This Week</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-number">18</div>
+                                <div class="stat-label">Completed</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-number">75%</div>
+                                <div class="stat-label">Success Rate</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <h2 class="card-title">Time Management</h2>
+                        <div style="text-align: center; padding: 2rem;">
+                            <div style="font-size: 2.5rem; margin-bottom: 1rem;">2.5h</div>
+                            <div style="color: rgba(255,255,255,0.7);">Average time per task</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Settings View -->
+            <div id="settings-view" class="view hidden">
+                <div class="header">
+                    <div>
+                        <h1 class="greeting">Settings</h1>
+                        <p class="date">Customize your experience</p>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h2 class="card-title">Preferences</h2>
+                    <div style="space-y: 1rem;">
+                        <div style="margin-bottom: 2rem;">
+                            <label style="display: block; margin-bottom: 0.5rem; font-weight: 600;">Notifications</label>
+                            <label style="display: flex; align-items: center; color: rgba(255,255,255,0.8);">
+                                <input type="checkbox" style="margin-right: 0.5rem;" checked> Enable task reminders
+                            </label>
+                        </div>
+                        <div style="margin-bottom: 2rem;">
+                            <label style="display: block; margin-bottom: 0.5rem; font-weight: 600;">Auto-save</label>
+                            <label style="display: flex; align-items: center; color: rgba(255,255,255,0.8);">
+                                <input type="checkbox" style="margin-right: 0.5rem;" checked> Automatically save changes
+                            </label>
+                        </div>
+                        <button class="btn btn-primary">Save Settings</button>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <button class="floating-action-btn" id="fab" title="Quick Add Task">+</button>
+
+    <!-- Quick Add Modal -->
+    <div class="modal-overlay" id="quick-add-modal">
+        <div class="modal">
+            <h2 style="margin-bottom: 1.5rem; color: var(--white);">Quick Add Task</h2>
+            <div style="margin-bottom: 1.5rem;">
+                <input type="text" class="todo-input" id="quick-todo-input" placeholder="Enter your task..." style="width: 100%; margin-bottom: 1rem;">
+            </div>
+            <div style="display: flex; justify-content: flex-end; gap: 1rem;">
+                <button class="btn" id="cancel-quick-add" style="background: rgba(255,255,255,0.1); color: var(--white);">Cancel</button>
+                <button class="btn btn-primary" id="confirm-quick-add">Add Task</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        class DashboardApp {
+            constructor() {
+                this.todos = [];
+                this.currentTheme = 'purple';
+                this.currentView = 'dashboard';
+                
+                this.init();
+            }
+
+            async init() {
+                await this.loadData();
+                this.setupEventListeners();
+                this.updateUI();
+                this.updateDateTime();
+                setInterval(() => this.updateDateTime(), 60000); // Update every minute
+            }
+
+            async loadData() {
+                try {
+                    if (window.electronAPI) {
+                        const savedTodos = await window.electronAPI.store.get('todos');
+                        const savedTheme = await window.electronAPI.store.get('theme');
+                        
+                        if (savedTodos) this.todos = savedTodos;
+                        if (savedTheme) this.currentTheme = savedTheme;
+                    } else {
+                        // Fallback for web version
+                        const savedTodos = localStorage.getItem('todos');
+                        const savedTheme = localStorage.getItem('theme');
+                        
+                        if (savedTodos) this.todos = JSON.parse(savedTodos);
+                        if (savedTheme) this.currentTheme = savedTheme;
+                    }
+                } catch (error) {
+                    console.error('Error loading data:', error);
+                }
+            }
+
+            async saveData() {
+                try {
+                    if (window.electronAPI) {
+                        await window.electronAPI.store.set('todos', this.todos);
+                        await window.electronAPI.store.set('theme', this.currentTheme);
+                    } else {
+                        // Fallback for web version
+                        localStorage.setItem('todos', JSON.stringify(this.todos));
+                        localStorage.setItem('theme', this.currentTheme);
+                    }
+                } catch (error) {
+                    console.error('Error saving data:', error);
+                }
+            }
+
+            setupEventListeners() {
+                // Navigation
+                document.querySelectorAll('.nav-item').forEach(item => {
+                    item.addEventListener('click', (e) => {
+                        const view = e.currentTarget.dataset.view;
+                        this.switchView(view);
+                    });
+                });
+
+                // Theme selection
+                document.querySelectorAll('.theme-option').forEach(option => {
+                    option.addEventListener('click', (e) => {
+                        const theme = e.currentTarget.dataset.theme;
+                        this.changeTheme(theme);
+                    });
+                });
+
+                // Todo functionality
+                document.getElementById('add-todo-btn')?.addEventListener('click', () => this.addTodo());
+                document.getElementById('todo-input')?.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') this.addTodo();
+                });
+
+                // Floating Action Button
+                document.getElementById('fab')?.addEventListener('click', () => this.showQuickAddModal());
+                document.getElementById('cancel-quick-add')?.addEventListener('click', () => this.hideQuickAddModal());
+                document.getElementById('confirm-quick-add')?.addEventListener('click', () => this.addQuickTodo());
+                document.getElementById('quick-todo-input')?.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') this.addQuickTodo();
+                });
+
+                // Modal overlay click to close
+                document.getElementById('quick-add-modal')?.addEventListener('click', (e) => {
+                    if (e.target === e.currentTarget) this.hideQuickAddModal();
+                });
+            }
+
+            switchView(viewName) {
+                // Update navigation
+                document.querySelectorAll('.nav-item').forEach(item => {
+                    item.classList.remove('active');
+                });
+                document.querySelector(`[data-view="${viewName}"]`).classList.add('active');
+
+                // Update views
+                document.querySelectorAll('.view').forEach(view => {
+                    view.classList.add('hidden');
+                });
+                document.getElementById(`${viewName}-view`).classList.remove('hidden');
+
+                this.currentView = viewName;
+            }
+
+            changeTheme(theme) {
+                const themeColors = {
+                    purple: { primary: '#6366f1', secondary: '#ec4899' },
+                    blue: { primary: '#3b82f6', secondary: '#06b6d4' },
+                    pink: { primary: '#ec4899', secondary: '#f43f5e' },
+                    green: { primary: '#10b981', secondary: '#059669' },
+                    orange: { primary: '#f59e0b', secondary: '#ea580c' },
+                    dark: { primary: '#374151', secondary: '#1f2937' }
+                };
+
+                const colors = themeColors[theme];
+                if (colors) {
+                    document.documentElement.style.setProperty('--primary', colors.primary);
+                    document.documentElement.style.setProperty('--secondary', colors.secondary);
+                    document.documentElement.style.setProperty('--gradient', `linear-gradient(135deg, ${colors.primary} 0%, ${colors.secondary} 100%)`);
+                }
+
+                // Update theme selector
+                document.querySelectorAll('.theme-option').forEach(option => {
+                    option.classList.remove('active');
+                });
+                document.querySelector(`[data-theme="${theme}"]`).classList.add('active');
+
+                this.currentTheme = theme;
+                this.saveData();
+            }
+
+            addTodo(text = null) {
+                const input = document.getElementById('todo-input');
+                const todoText = text || input?.value.trim();
+
+                if (!todoText) return;
+
+                const todo = {
+                    id: Date.now(),
+                    text: todoText,
+                    completed: false,
+                    createdAt: new Date().toISOString()
+                };
+
+                this.todos.unshift(todo);
+                if (input) input.value = '';
+                
+                this.updateUI();
+                this.saveData();
+            }
+
+            addQuickTodo() {
+                const input = document.getElementById('quick-todo-input');
+                const todoText = input?.value.trim();
+
+                if (todoText) {
+                    this.addTodo(todoText);
+                    input.value = '';
+                    this.hideQuickAddModal();
+                }
+            }
+
+            toggleTodo(id) {
+                const todo = this.todos.find(t => t.id === id);
+                if (todo) {
+                    todo.completed = !todo.completed;
+                    this.updateUI();
+                    this.saveData();
+                }
+            }
+
+            deleteTodo(id) {
+                this.todos = this.todos.filter(t => t.id !== id);
+                this.updateUI();
+                this.saveData();
+            }
+
+            showQuickAddModal() {
+                document.getElementById('quick-add-modal').classList.add('active');
+                setTimeout(() => {
+                    document.getElementById('quick-todo-input')?.focus();
+                }, 100);
+            }
+
+            hideQuickAddModal() {
+                document.getElementById('quick-add-modal').classList.remove('active');
+            }
+
+            updateUI() {
+                this.renderTodos();
+                this.updateStats();
+            }
+
+            renderTodos() {
+                const todoList = document.getElementById('todo-list');
+                if (!todoList) return;
+
+                todoList.innerHTML = '';
+
+                if (this.todos.length === 0) {
+                    todoList.innerHTML = `
+                        <div style="text-align: center; padding: 3rem; color: rgba(255,255,255,0.6);">
+                            <svg style="width: 64px; height: 64px; margin-bottom: 1rem; opacity: 0.5;" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd"></path>
+                            </svg>
+                            <div style="font-size: 1.25rem; margin-bottom: 0.5rem;">No tasks yet</div>
+                            <div>Add your first task to get started!</div>
+                        </div>
+                    `;
+                    return;
+                }
+
+                this.todos.forEach(todo => {
+                    const todoItem = document.createElement('div');
+                    todoItem.className = 'todo-item';
+                    todoItem.innerHTML = `
+                        <div class="todo-checkbox ${todo.completed ? 'checked' : ''}" onclick="app.toggleTodo(${todo.id})">
+                            ${todo.completed ? '✓' : ''}
+                        </div>
+                        <div class="todo-text ${todo.completed ? 'completed' : ''}">${todo.text}</div>
+                        <div class="todo-actions">
+                            <button class="btn btn-small btn-danger" onclick="app.deleteTodo(${todo.id})">Delete</button>
+                        </div>
+                    `;
+                    todoList.appendChild(todoItem);
+                });
+            }
+
+            updateStats() {
+                const totalTodos = this.todos.length;
+                const completedTodos = this.todos.filter(t => t.completed).length;
+                const completionRate = totalTodos > 0 ? Math.round((completedTodos / totalTodos) * 100) : 0;
+
+                // Update dashboard stats
+                const totalElement = document.getElementById('total-todos');
+                const completedElement = document.getElementById('completed-todos');
+                const percentageElement = document.getElementById('completion-percentage');
+                const progressBar = document.getElementById('progress-bar');
+                const productivityScore = document.getElementById('productivity-score');
+
+                if (totalElement) totalElement.textContent = totalTodos;
+                if (completedElement) completedElement.textContent = completedTodos;
+                if (percentageElement) percentageElement.textContent = `${completionRate}%`;
+                if (progressBar) progressBar.style.width = `${completionRate}%`;
+                if (productivityScore) productivityScore.textContent = Math.min(85 + completionRate, 100);
+            }
+
+            updateDateTime() {
+                const now = new Date();
+                const options = { 
+                    weekday: 'long', 
+                    year: 'numeric', 
+                    month: 'long', 
+                    day: 'numeric' 
+                };
+                
+                const dateElement = document.getElementById('current-date');
+                if (dateElement) {
+                    dateElement.textContent = now.toLocaleDateString('en-US', options);
+                }
+
+                // Update greeting based on time
+                const hour = now.getHours();
+                let greeting = 'Good morning';
+                if (hour >= 12 && hour < 17) greeting = 'Good afternoon';
+                else if (hour >= 17) greeting = 'Good evening';
+
+                document.querySelectorAll('.greeting').forEach(el => {
+                    if (el.textContent.startsWith('Good')) {
+                        el.textContent = `${greeting}, User!`;
+                    }
+                });
+            }
+        }
+
+        // Initialize the app
+        const app = new DashboardApp();
+
+        // Handle Electron-specific events
+        if (window.electronAPI) {
+            console.log('Running in Electron environment');
+            console.log('Platform:', window.electronAPI.platform);
+            console.log('Version:', window.electronAPI.version);
+        }
+    </script>
+</body>
+</html>
