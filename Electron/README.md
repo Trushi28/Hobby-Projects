@@ -60,7 +60,7 @@ Each application demonstrates **advanced concepts**, **modern design patterns**,
 ### 🖥️ **NEOWM DESKTOP**
 **Complete OS Environment**
 
-[![Desktop Demo](./Assets/2025-06-07-113934_rec.mp4)](./Assets/2025-06-07-113934_rec.mp4)
+[![Desktop Demo](./Assets/20250811104634.png)](./Assets/2025-06-07-113934_rec.mp4)
 
 *Full desktop environment simulation with workspace management and built-in applications*
 

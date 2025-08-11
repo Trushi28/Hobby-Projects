@@ -30,6 +30,19 @@ Four projects demonstrating core systems programming concepts:
 
 *Technologies: C99, GTK3, Socket Programming, HTTP Protocol*
 
+### ⚛️ **React Projects** - Web Applications
+One Project As of now for Web Applications
+- **🌿 Eco-APP**: A App which tells user About Eco-Score of the Product
+
+*Technologies: ReactJS, Express, NodeJS, FireBase*
+
+### 🔬 **Compiler** - Compilers 
+Two Projects demonstrating Compiler Behavior:
+- **🦀 Flux**:A Modern Pragmatic Language
+- **🔬 ZenLang**:An Experimental Function-Oriented Language
+
+*Technologies: C99, Rust*
+
 ---
 
 ## 🎯 **What You'll Find Here**
