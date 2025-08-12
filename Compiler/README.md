@@ -1,7 +1,7 @@
 
 # 🚀 Flux & ZenLang Programming Languages
 
-> **Two innovative programming languages with unique features, built from scratch in May 2024**
+> **Two innovative programming languages with unique features, built from scratch in May 2025**
 
 [![Language](https://img.shields.io/badge/Language-Rust%20%7C%20C-orange.svg)](https://github.com/yourusername/flux-zenlang) ![License](https://img.shields.io/badge/License-MIT-blue.svg) [![Build Status](https://img.shields.io/badge/Build-Passing-brightgreen.svg)](https://github.com/yourusername/flux-zenlang) [![Version](https://img.shields.io/badge/Version-1.0.0-red.svg)](https://github.com/yourusername/flux-zenlang/releases)
 
@@ -62,7 +62,7 @@ graph TD
 
 ```mermaid
 gantt
-    title Flux & ZenLang Development (May 2024)
+    title Flux & ZenLang Development (May 2025)
     dateFormat  YYYY-MM-DD
     section Planning
     Language Design     :done, design, 2025-05-01, 2025-05-05
@@ -248,21 +248,21 @@ graph LR
 
 ## 🔮 Future Roadmap
 
-### Version 1.1 (Q3 2024)
+### Version 1.1 (Q3 2025)
 
 -   [ ] **Garbage Collection** - Advanced memory management
 -   [ ] **Module System** - Import/export capabilities
 -   [ ] **Standard Library** - Common utilities and functions
 -   [ ] **IDE Integration** - VS Code extension with syntax highlighting
 
-### Version 1.2 (Q4 2024)
+### Version 1.2 (Q4 2025)
 
 -   [ ] **Async/Await Support** - Asynchronous programming primitives
 -   [ ] **WebAssembly Target** - Compile to WASM
 -   [ ] **Package Manager** - Dependency management system
 -   [ ] **Debugger Integration** - Professional debugging tools
 
-### Version 2.0 (Q1 2025)
+### Version 2.0 (Q1 2026)
 
 -   [ ] **JIT Compilation** - Runtime optimization
 -   [ ] **Distributed Computing** - Built-in clustering support
@@ -333,7 +333,7 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 **⭐ If you found this project interesting, please give it a star! ⭐**
 
-_Built with ❤️ in May 2024_
+_Built with ❤️ in May 2025_
 
 </div>
 
