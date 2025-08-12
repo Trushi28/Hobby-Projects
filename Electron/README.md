@@ -604,11 +604,7 @@ electron index.html
 
 ## 📜 **License & Credits**
 
-### 📄 **MIT License**
-```
-MIT License - Feel free to use, modify, and distribute
-Perfect for learning, portfolios, and commercial projects
-```
+This project is currently unlicensed. All rights reserved.
 
 ### 🙏 **Acknowledgments**
 - **Electron Team** - For the amazing framework

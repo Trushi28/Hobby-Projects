@@ -283,7 +283,7 @@ We welcome contributions! Here's how you can help:
 
 ## 📄 **License & Credits**
 
-This project is open source and available under the MIT License. Feel free to fork, modify, and share!
+This project is currently unlicensed. All rights reserved.
 
 **Built with ❤️ using:**
 - Python 3.x
