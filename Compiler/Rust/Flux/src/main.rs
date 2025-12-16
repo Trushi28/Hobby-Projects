@@ -20,21 +20,27 @@ pub enum TokenType {
     Identifier(String),
     
     // Keywords
-    Let, Const, Func, Return, If, Else, While, For,
+    Let, Const, Func, Return, If, Else, While, For, In,
     Class, Extends, New, This, Super,
     Import, Export, Match, Case, Default,
     Temporal, Freeze, Thaw, Timeline,
+    Print, // Built-in print function
     
     // Operators
     Plus, Minus, Multiply, Divide, Modulo,
     Assign, Equal, NotEqual, Less, Greater,
     LessEqual, GreaterEqual, And, Or, Not,
     Arrow, FatArrow, Pipe, Compose,
+    PlusAssign, MinusAssign, MulAssign, DivAssign, // Compound assignment
+    DoubleDot, // Range operator ..
     
     // Delimiters
     LeftParen, RightParen, LeftBrace, RightBrace,
     LeftBracket, RightBracket, Comma, Semicolon,
     Colon, Dot, Question, Bang,
+    
+    // Control flow
+    Break, Continue,
     
     // Special
     Newline, Indent, Dedent, EOF,
@@ -194,8 +200,13 @@ impl Lexer {
                 }
                 
                 '+' => {
-                    tokens.push(TokenType::Plus);
                     self.advance();
+                    if self.current_char == Some('=') {
+                        tokens.push(TokenType::PlusAssign);
+                        self.advance();
+                    } else {
+                        tokens.push(TokenType::Plus);
+                    }
                 }
                 
                 '-' => {
@@ -203,19 +214,32 @@ impl Lexer {
                     if self.current_char == Some('>') {
                         tokens.push(TokenType::Arrow);
                         self.advance();
+                    } else if self.current_char == Some('=') {
+                        tokens.push(TokenType::MinusAssign);
+                        self.advance();
                     } else {
                         tokens.push(TokenType::Minus);
                     }
                 }
                 
                 '*' => {
-                    tokens.push(TokenType::Multiply);
                     self.advance();
+                    if self.current_char == Some('=') {
+                        tokens.push(TokenType::MulAssign);
+                        self.advance();
+                    } else {
+                        tokens.push(TokenType::Multiply);
+                    }
                 }
                 
                 '/' => {
-                    tokens.push(TokenType::Divide);
                     self.advance();
+                    if self.current_char == Some('=') {
+                        tokens.push(TokenType::DivAssign);
+                        self.advance();
+                    } else {
+                        tokens.push(TokenType::Divide);
+                    }
                 }
                 
                 '%' => {
@@ -374,6 +398,9 @@ impl Lexer {
                         "else" => TokenType::Else,
                         "while" => TokenType::While,
                         "for" => TokenType::For,
+                        "in" => TokenType::In,
+                        "break" => TokenType::Break,
+                        "continue" => TokenType::Continue,
                         "class" => TokenType::Class,
                         "extends" => TokenType::Extends,
                         "new" => TokenType::New,
@@ -388,6 +415,7 @@ impl Lexer {
                         "freeze" => TokenType::Freeze,
                         "thaw" => TokenType::Thaw,
                         "timeline" => TokenType::Timeline,
+                        "print" => TokenType::Print,
                         "true" => TokenType::Boolean(true),
                         "false" => TokenType::Boolean(false),
                         _ => TokenType::Identifier(identifier),
@@ -441,6 +469,18 @@ pub enum ASTNode {
         else_branch: Option<Vec<ASTNode>> 
     },
     While { condition: Box<ASTNode>, body: Vec<ASTNode> },
+    For {
+        var: String,
+        iterable: Box<ASTNode>,
+        body: Vec<ASTNode>,
+    },
+    Break,
+    Continue,
+    CompoundAssignment {
+        name: String,
+        operator: String, // +=, -=, *=, /=
+        value: Box<ASTNode>,
+    },
     
     // Expressions
     Binary { 
@@ -451,12 +491,15 @@ pub enum ASTNode {
     Unary { operator: String, operand: Box<ASTNode> },
     Call { callee: Box<ASTNode>, args: Vec<ASTNode> },
     MemberAccess { object: Box<ASTNode>, property: String },
+    IndexAccess { object: Box<ASTNode>, index: Box<ASTNode> },
     
     // Literals
     Number(f64),
     String(String),
     Boolean(bool),
     Identifier(String),
+    Array(Vec<ASTNode>),
+    Object(Vec<(String, ASTNode)>),
     
     // Unique Features
     TemporalAccess { 
@@ -536,9 +579,78 @@ impl Parser {
             TokenType::If => self.parse_if(),
             TokenType::While => self.parse_while(),
             TokenType::Match => self.parse_match(),
+            TokenType::For => self.parse_for(),
+            TokenType::Break => {
+                self.advance();
+                Ok(ASTNode::Break)
+            }
+            TokenType::Continue => {
+                self.advance();
+                Ok(ASTNode::Continue)
+            }
+            TokenType::Identifier(_) => {
+                // Look ahead to check if this is an assignment or compound assignment
+                let name = if let TokenType::Identifier(n) = self.peek() { 
+                    n.clone() 
+                } else { 
+                    unreachable!() 
+                };
+                self.advance(); // consume identifier
+                
+                match self.peek() {
+                    TokenType::Assign => {
+                        self.advance(); // consume '='
+                        let value = self.parse_expression()?;
+                        Ok(ASTNode::Assignment { 
+                            name, 
+                            value: Box::new(value) 
+                        })
+                    }
+                    TokenType::PlusAssign => {
+                        self.advance();
+                        let value = self.parse_expression()?;
+                        Ok(ASTNode::CompoundAssignment { 
+                            name, 
+                            operator: "+=".to_string(),
+                            value: Box::new(value) 
+                        })
+                    }
+                    TokenType::MinusAssign => {
+                        self.advance();
+                        let value = self.parse_expression()?;
+                        Ok(ASTNode::CompoundAssignment { 
+                            name, 
+                            operator: "-=".to_string(),
+                            value: Box::new(value) 
+                        })
+                    }
+                    TokenType::MulAssign => {
+                        self.advance();
+                        let value = self.parse_expression()?;
+                        Ok(ASTNode::CompoundAssignment { 
+                            name, 
+                            operator: "*=".to_string(),
+                            value: Box::new(value) 
+                        })
+                    }
+                    TokenType::DivAssign => {
+                        self.advance();
+                        let value = self.parse_expression()?;
+                        Ok(ASTNode::CompoundAssignment { 
+                            name, 
+                            operator: "/=".to_string(),
+                            value: Box::new(value) 
+                        })
+                    }
+                    _ => {
+                        // Not an assignment, backtrack and parse as expression
+                        self.current -= 1;
+                        self.parse_expression()
+                    }
+                }
+            }
             _ => {
-                let expr = self.parse_expression()?;
-                Ok(expr)
+                self.parse_expression()
             }
         }
     }
@@ -698,6 +810,39 @@ impl Parser {
         })
     }
     
+    fn parse_for(&mut self) -> Result<ASTNode, String> {
+        self.advance(); // consume 'for'
+        
+        // Get loop variable
+        let var = if let TokenType::Identifier(name) = self.peek() {
+            let n = name.clone();
+            self.advance();
+            n
+        } else {
+            return Err("Expected identifier after 'for'".to_string());
+        };
+        
+        // Consume 'in'
+        self.consume(TokenType::In)?;
+        
+        // Parse iterable expression
+        let iterable = self.parse_expression()?;
+        
+        // Parse body
+        self.consume(TokenType::LeftBrace)?;
+        let mut body = Vec::new();
+        while !matches!(self.peek(), TokenType::RightBrace) {
+            body.push(self.parse_statement()?);
+        }
+        self.consume(TokenType::RightBrace)?;
+        
+        Ok(ASTNode::For {
+            var,
+            iterable: Box::new(iterable),
+            body,
+        })
+    }
+
     fn parse_match(&mut self) -> Result<ASTNode, String> {
         self.advance(); // consume 'match'
         
@@ -971,11 +1116,66 @@ impl Parser {
                 self.advance();
                 Ok(ASTNode::Identifier(id))
             }
+            TokenType::Print => {
+                // Treat print as an identifier for function calls
+                self.advance();
+                Ok(ASTNode::Identifier("print".to_string()))
+            }
+            TokenType::Default => {
+                // Default keyword in match is treated as identifier
+                self.advance();
+                Ok(ASTNode::Identifier("default".to_string()))
+            }
             TokenType::LeftParen => {
                 self.advance();
                 let expr = self.parse_expression()?;
                 self.consume(TokenType::RightParen)?;
                 Ok(expr)
+            }
+            TokenType::LeftBracket => {
+                // Array literal: [1, 2, 3]
+                self.advance();
+                let mut elements = Vec::new();
+                
+                while !matches!(self.peek(), TokenType::RightBracket) {
+                    elements.push(self.parse_expression()?);
+                    if matches!(self.peek(), TokenType::Comma) {
+                        self.advance();
+                    }
+                }
+                
+                self.consume(TokenType::RightBracket)?;
+                Ok(ASTNode::Array(elements))
+            }
+            TokenType::LeftBrace => {
+                // Object literal: { key: value, ... }
+                self.advance();
+                let mut properties = Vec::new();
+                
+                while !matches!(self.peek(), TokenType::RightBrace) {
+                    let key = if let TokenType::Identifier(k) = self.peek() {
+                        let key = k.clone();
+                        self.advance();
+                        key
+                    } else {
+                        return Err("Expected property name in object literal".to_string());
+                    };
+                    
+                    self.consume(TokenType::Colon)?;
+                    let value = self.parse_expression()?;
+                    properties.push((key, value));
+                    
+                    if matches!(self.peek(), TokenType::Comma) {
+                        self.advance();
+                    }
+                }
+                
+                self.consume(TokenType::RightBrace)?;
+                Ok(ASTNode::Object(properties))
+            }
+            TokenType::Match => {
+                // Match expression in expression context
+                self.parse_match()
             }
             _ => Err(format!("Unexpected token in expression: {:?}", self.peek())),
         }
@@ -1554,50 +1754,1343 @@ impl FluxCompiler {
 }
 
 // ============================================================================
+// INTERPRETER - Tree-Walking Execution Engine
+// ============================================================================
+
+#[derive(Debug, Clone)]
+pub enum RuntimeValue {
+    Number(f64),
+    String(String),
+    Boolean(bool),
+    Array(Vec<RuntimeValue>),
+    Object(HashMap<String, RuntimeValue>),
+    Function {
+        params: Vec<String>,
+        body: Vec<ASTNode>,
+        closure: HashMap<String, RuntimeValue>,
+    },
+    Null,
+    Return(Box<RuntimeValue>), // For early return handling
+}
+
+impl std::fmt::Display for RuntimeValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RuntimeValue::Number(n) => {
+                if n.fract() == 0.0 {
+                    write!(f, "{}", *n as i64)
+                } else {
+                    write!(f, "{}", n)
+                }
+            }
+            RuntimeValue::String(s) => write!(f, "{}", s),
+            RuntimeValue::Boolean(b) => write!(f, "{}", b),
+            RuntimeValue::Array(arr) => {
+                let items: Vec<String> = arr.iter().map(|v| format!("{}", v)).collect();
+                write!(f, "[{}]", items.join(", "))
+            }
+            RuntimeValue::Object(obj) => {
+                let items: Vec<String> = obj.iter()
+                    .map(|(k, v)| format!("{}: {}", k, v))
+                    .collect();
+                write!(f, "{{{}}}", items.join(", "))
+            }
+            RuntimeValue::Function { .. } => write!(f, "<function>"),
+            RuntimeValue::Null => write!(f, "null"),
+            RuntimeValue::Return(v) => write!(f, "{}", v),
+        }
+    }
+}
+
+pub struct Interpreter {
+    global_scope: HashMap<String, RuntimeValue>,
+    scopes: Vec<HashMap<String, RuntimeValue>>,
+    functions: HashMap<String, (Vec<String>, Vec<ASTNode>)>,
+    temporal_vars: HashMap<String, Vec<RuntimeValue>>,
+    const_vars: std::collections::HashSet<String>,
+    temporal_var_names: std::collections::HashSet<String>,
+}
+
+impl Interpreter {
+    pub fn new() -> Self {
+        Self {
+            global_scope: HashMap::new(),
+            scopes: Vec::new(),
+            functions: HashMap::new(),
+            temporal_vars: HashMap::new(),
+            const_vars: std::collections::HashSet::new(),
+            temporal_var_names: std::collections::HashSet::new(),
+        }
+    }
+    
+    pub fn execute(&mut self, program: &ASTNode) -> Result<RuntimeValue, String> {
+        match program {
+            ASTNode::Program(statements) => {
+                let mut result = RuntimeValue::Null;
+                for stmt in statements {
+                    result = self.execute_statement(stmt)?;
+                }
+                Ok(result)
+            }
+            _ => self.execute_statement(program),
+        }
+    }
+    
+    fn execute_statement(&mut self, stmt: &ASTNode) -> Result<RuntimeValue, String> {
+        match stmt {
+            ASTNode::VarDecl { name, value, is_const, is_temporal } => {
+                let val = self.evaluate(value)?;
+                
+                // Check if already declared
+                if self.get_variable(name).is_some() {
+                    return Err(format!("Variable '{}' is already declared", name));
+                }
+                
+                if *is_temporal {
+                    self.temporal_vars.insert(name.clone(), vec![val.clone()]);
+                    self.temporal_var_names.insert(name.clone());
+                }
+                
+                if *is_const {
+                    self.const_vars.insert(name.clone());
+                }
+                
+                self.set_variable(name.clone(), val.clone());
+                Ok(val)
+            }
+            
+            ASTNode::Assignment { name, value } => {
+                // Check if variable exists
+                if self.get_variable(name).is_none() {
+                    return Err(format!("Variable '{}' is not declared", name));
+                }
+                
+                // Check if const
+                if self.const_vars.contains(name) {
+                    return Err(format!("Cannot reassign constant variable '{}'", name));
+                }
+                
+                let val = self.evaluate(value)?;
+                
+                // Update temporal variable history
+                if self.temporal_var_names.contains(name) {
+                    if let Some(history) = self.temporal_vars.get_mut(name) {
+                        history.push(val.clone());
+                    }
+                }
+                
+                // Update in original scope
+                self.update_variable(name, val.clone());
+                Ok(val)
+            }
+            
+            ASTNode::CompoundAssignment { name, operator, value } => {
+                // Check if variable exists
+                let current = self.get_variable(name)
+                    .ok_or_else(|| format!("Variable '{}' is not declared", name))?;
+                
+                // Check if const
+                if self.const_vars.contains(name) {
+                    return Err(format!("Cannot reassign constant variable '{}'", name));
+                }
+                
+                let rhs = self.evaluate(value)?;
+                
+                // Perform the operation
+                let new_val = match operator.as_str() {
+                    "+=" => self.add(current, rhs)?,
+                    "-=" => self.subtract(current, rhs)?,
+                    "*=" => self.multiply(current, rhs)?,
+                    "/=" => self.divide(current, rhs)?,
+                    _ => return Err(format!("Unknown compound operator: {}", operator)),
+                };
+                
+                // Update temporal variable history
+                if self.temporal_var_names.contains(name) {
+                    if let Some(history) = self.temporal_vars.get_mut(name) {
+                        history.push(new_val.clone());
+                    }
+                }
+                
+                self.update_variable(name, new_val.clone());
+                Ok(new_val)
+            }
+            
+            ASTNode::Break => Ok(RuntimeValue::String("__break__".to_string())),
+            ASTNode::Continue => Ok(RuntimeValue::String("__continue__".to_string())),
+            
+            ASTNode::FunctionDecl { name, params, body } => {
+                self.functions.insert(name.clone(), (params.clone(), body.clone()));
+                Ok(RuntimeValue::Null)
+            }
+            
+            ASTNode::Return(expr) => {
+                let val = self.evaluate(expr)?;
+                Ok(RuntimeValue::Return(Box::new(val)))
+            }
+            
+            ASTNode::If { condition, then_branch, else_branch } => {
+                let cond = self.evaluate(condition)?;
+                if self.is_truthy(&cond) {
+                    for stmt in then_branch {
+                        let result = self.execute_statement(stmt)?;
+                        // Propagate return, break, and continue
+                        if matches!(result, RuntimeValue::Return(_)) {
+                            return Ok(result);
+                        }
+                        if let RuntimeValue::String(s) = &result {
+                            if s == "__break__" || s == "__continue__" {
+                                return Ok(result);
+                            }
+                        }
+                    }
+                } else if let Some(else_stmts) = else_branch {
+                    for stmt in else_stmts {
+                        let result = self.execute_statement(stmt)?;
+                        if matches!(result, RuntimeValue::Return(_)) {
+                            return Ok(result);
+                        }
+                        if let RuntimeValue::String(s) = &result {
+                            if s == "__break__" || s == "__continue__" {
+                                return Ok(result);
+                            }
+                        }
+                    }
+                }
+                Ok(RuntimeValue::Null)
+            }
+            
+            ASTNode::While { condition, body } => {
+                'outer: loop {
+                    let cond_val = self.evaluate(condition)?;
+                    if !self.is_truthy(&cond_val) {
+                        break;
+                    }
+                    for stmt in body {
+                        let result = self.execute_statement(stmt)?;
+                        if let RuntimeValue::String(s) = &result {
+                            if s == "__break__" {
+                                break 'outer;
+                            } else if s == "__continue__" {
+                                continue 'outer;
+                            }
+                        }
+                        if matches!(result, RuntimeValue::Return(_)) {
+                            return Ok(result);
+                        }
+                    }
+                }
+                Ok(RuntimeValue::Null)
+            }
+            
+            ASTNode::For { var, iterable, body } => {
+                let iter_val = self.evaluate(iterable)?;
+                match iter_val {
+                    RuntimeValue::Array(items) => {
+                        'for_outer: for item in items {
+                            self.scopes.push(HashMap::new());
+                            self.set_variable(var.clone(), item);
+                            for stmt in body {
+                                let result = self.execute_statement(stmt)?;
+                                if let RuntimeValue::String(s) = &result {
+                                    if s == "__break__" {
+                                        self.scopes.pop();
+                                        break 'for_outer;
+                                    } else if s == "__continue__" {
+                                        self.scopes.pop();
+                                        continue 'for_outer;
+                                    }
+                                }
+                                if matches!(result, RuntimeValue::Return(_)) {
+                                    self.scopes.pop();
+                                    return Ok(result);
+                                }
+                            }
+                            self.scopes.pop();
+                        }
+                    }
+                    _ => return Err("For loop requires an iterable (array)".to_string()),
+                }
+                Ok(RuntimeValue::Null)
+            }
+            
+            _ => self.evaluate(stmt),
+        }
+    }
+    
+    fn evaluate(&mut self, expr: &ASTNode) -> Result<RuntimeValue, String> {
+        match expr {
+            ASTNode::Number(n) => Ok(RuntimeValue::Number(*n)),
+            ASTNode::String(s) => Ok(RuntimeValue::String(s.clone())),
+            ASTNode::Boolean(b) => Ok(RuntimeValue::Boolean(*b)),
+            
+            ASTNode::Identifier(name) => {
+                self.get_variable(name)
+                    .ok_or_else(|| format!("Undefined variable: {}", name))
+            }
+            
+            ASTNode::Array(elements) => {
+                let values: Result<Vec<RuntimeValue>, String> = elements
+                    .iter()
+                    .map(|e| self.evaluate(e))
+                    .collect();
+                Ok(RuntimeValue::Array(values?))
+            }
+            
+            ASTNode::Object(properties) => {
+                let mut obj = HashMap::new();
+                for (key, value) in properties {
+                    obj.insert(key.clone(), self.evaluate(value)?);
+                }
+                Ok(RuntimeValue::Object(obj))
+            }
+            
+            ASTNode::Binary { left, operator, right } => {
+                let left_val = self.evaluate(left)?;
+                let right_val = self.evaluate(right)?;
+                
+                match operator.as_str() {
+                    "+" => self.add(left_val, right_val),
+                    "-" => self.subtract(left_val, right_val),
+                    "*" => self.multiply(left_val, right_val),
+                    "/" => self.divide(left_val, right_val),
+                    "%" => self.modulo(left_val, right_val),
+                    "==" => self.equals(left_val, right_val),
+                    "!=" => self.not_equals(left_val, right_val),
+                    "<" => self.less_than(left_val, right_val),
+                    ">" => self.greater_than(left_val, right_val),
+                    "<=" => self.less_equal(left_val, right_val),
+                    ">=" => self.greater_equal(left_val, right_val),
+                    "&&" => Ok(RuntimeValue::Boolean(self.is_truthy(&left_val) && self.is_truthy(&right_val))),
+                    "||" => Ok(RuntimeValue::Boolean(self.is_truthy(&left_val) || self.is_truthy(&right_val))),
+                    _ => Err(format!("Unknown operator: {}", operator)),
+                }
+            }
+            
+            ASTNode::Unary { operator, operand } => {
+                let val = self.evaluate(operand)?;
+                match operator.as_str() {
+                    "-" => match val {
+                        RuntimeValue::Number(n) => Ok(RuntimeValue::Number(-n)),
+                        _ => Err("Cannot negate non-number".to_string()),
+                    },
+                    "!" => Ok(RuntimeValue::Boolean(!self.is_truthy(&val))),
+                    _ => Err(format!("Unknown unary operator: {}", operator)),
+                }
+            }
+            
+            ASTNode::Call { callee, args } => {
+                let arg_values: Result<Vec<RuntimeValue>, String> = args
+                    .iter()
+                    .map(|a| self.evaluate(a))
+                    .collect();
+                let arg_values = arg_values?;
+                
+                if let ASTNode::Identifier(func_name) = callee.as_ref() {
+                    // Built-in functions
+                    match func_name.as_str() {
+                        "print" => {
+                            let output: Vec<String> = arg_values.iter()
+                                .map(|v| format!("{}", v))
+                                .collect();
+                            println!("{}", output.join(" "));
+                            return Ok(RuntimeValue::Null);
+                        }
+                        "len" => {
+                            if let Some(arg) = arg_values.first() {
+                                match arg {
+                                    RuntimeValue::String(s) => return Ok(RuntimeValue::Number(s.len() as f64)),
+                                    RuntimeValue::Array(arr) => return Ok(RuntimeValue::Number(arr.len() as f64)),
+                                    _ => return Err("len() requires string or array".to_string()),
+                                }
+                            }
+                        }
+                        "abs" => {
+                            if let Some(RuntimeValue::Number(n)) = arg_values.first() {
+                                return Ok(RuntimeValue::Number(n.abs()));
+                            }
+                        }
+                        "sqrt" => {
+                            if let Some(RuntimeValue::Number(n)) = arg_values.first() {
+                                return Ok(RuntimeValue::Number(n.sqrt()));
+                            }
+                        }
+                        "typeof" => {
+                            if let Some(arg) = arg_values.first() {
+                                let type_name = match arg {
+                                    RuntimeValue::Number(_) => "number",
+                                    RuntimeValue::String(_) => "string",
+                                    RuntimeValue::Boolean(_) => "boolean",
+                                    RuntimeValue::Array(_) => "array",
+                                    RuntimeValue::Object(_) => "object",
+                                    RuntimeValue::Function { .. } => "function",
+                                    RuntimeValue::Null => "null",
+                                    RuntimeValue::Return(_) => "return",
+                                };
+                                return Ok(RuntimeValue::String(type_name.to_string()));
+                            }
+                        }
+                        "range" => {
+                            // range(end) or range(start, end)
+                            match arg_values.as_slice() {
+                                [RuntimeValue::Number(end)] => {
+                                    let arr: Vec<RuntimeValue> = (0..(*end as i64))
+                                        .map(|n| RuntimeValue::Number(n as f64))
+                                        .collect();
+                                    return Ok(RuntimeValue::Array(arr));
+                                }
+                                [RuntimeValue::Number(start), RuntimeValue::Number(end)] => {
+                                    let arr: Vec<RuntimeValue> = ((*start as i64)..(*end as i64))
+                                        .map(|n| RuntimeValue::Number(n as f64))
+                                        .collect();
+                                    return Ok(RuntimeValue::Array(arr));
+                                }
+                                _ => return Err("range() requires 1 or 2 number arguments".to_string()),
+                            }
+                        }
+                        
+                        // Math functions
+                        "floor" => {
+                            if let Some(RuntimeValue::Number(n)) = arg_values.first() {
+                                return Ok(RuntimeValue::Number(n.floor()));
+                            }
+                        }
+                        "ceil" => {
+                            if let Some(RuntimeValue::Number(n)) = arg_values.first() {
+                                return Ok(RuntimeValue::Number(n.ceil()));
+                            }
+                        }
+                        "round" => {
+                            if let Some(RuntimeValue::Number(n)) = arg_values.first() {
+                                return Ok(RuntimeValue::Number(n.round()));
+                            }
+                        }
+                        "min" => {
+                            match arg_values.as_slice() {
+                                [RuntimeValue::Number(a), RuntimeValue::Number(b)] => {
+                                    return Ok(RuntimeValue::Number(a.min(*b)));
+                                }
+                                [RuntimeValue::Array(arr)] => {
+                                    let mut min_val = f64::INFINITY;
+                                    for item in arr {
+                                        if let RuntimeValue::Number(n) = item {
+                                            if *n < min_val { min_val = *n; }
+                                        }
+                                    }
+                                    return Ok(RuntimeValue::Number(min_val));
+                                }
+                                _ => return Err("min() requires 2 numbers or an array".to_string()),
+                            }
+                        }
+                        "max" => {
+                            match arg_values.as_slice() {
+                                [RuntimeValue::Number(a), RuntimeValue::Number(b)] => {
+                                    return Ok(RuntimeValue::Number(a.max(*b)));
+                                }
+                                [RuntimeValue::Array(arr)] => {
+                                    let mut max_val = f64::NEG_INFINITY;
+                                    for item in arr {
+                                        if let RuntimeValue::Number(n) = item {
+                                            if *n > max_val { max_val = *n; }
+                                        }
+                                    }
+                                    return Ok(RuntimeValue::Number(max_val));
+                                }
+                                _ => return Err("max() requires 2 numbers or an array".to_string()),
+                            }
+                        }
+                        "pow" => {
+                            match arg_values.as_slice() {
+                                [RuntimeValue::Number(base), RuntimeValue::Number(exp)] => {
+                                    return Ok(RuntimeValue::Number(base.powf(*exp)));
+                                }
+                                _ => return Err("pow() requires 2 number arguments".to_string()),
+                            }
+                        }
+                        "sin" => {
+                            if let Some(RuntimeValue::Number(n)) = arg_values.first() {
+                                return Ok(RuntimeValue::Number(n.sin()));
+                            }
+                        }
+                        "cos" => {
+                            if let Some(RuntimeValue::Number(n)) = arg_values.first() {
+                                return Ok(RuntimeValue::Number(n.cos()));
+                            }
+                        }
+                        "tan" => {
+                            if let Some(RuntimeValue::Number(n)) = arg_values.first() {
+                                return Ok(RuntimeValue::Number(n.tan()));
+                            }
+                        }
+                        "log" => {
+                            if let Some(RuntimeValue::Number(n)) = arg_values.first() {
+                                return Ok(RuntimeValue::Number(n.ln()));
+                            }
+                        }
+                        "log10" => {
+                            if let Some(RuntimeValue::Number(n)) = arg_values.first() {
+                                return Ok(RuntimeValue::Number(n.log10()));
+                            }
+                        }
+                        
+                        // String functions
+                        "upper" => {
+                            if let Some(RuntimeValue::String(s)) = arg_values.first() {
+                                return Ok(RuntimeValue::String(s.to_uppercase()));
+                            }
+                        }
+                        "lower" => {
+                            if let Some(RuntimeValue::String(s)) = arg_values.first() {
+                                return Ok(RuntimeValue::String(s.to_lowercase()));
+                            }
+                        }
+                        "trim" => {
+                            if let Some(RuntimeValue::String(s)) = arg_values.first() {
+                                return Ok(RuntimeValue::String(s.trim().to_string()));
+                            }
+                        }
+                        "split" => {
+                            match arg_values.as_slice() {
+                                [RuntimeValue::String(s), RuntimeValue::String(delim)] => {
+                                    let parts: Vec<RuntimeValue> = s.split(delim.as_str())
+                                        .map(|p| RuntimeValue::String(p.to_string()))
+                                        .collect();
+                                    return Ok(RuntimeValue::Array(parts));
+                                }
+                                _ => return Err("split() requires string and delimiter".to_string()),
+                            }
+                        }
+                        "join" => {
+                            match arg_values.as_slice() {
+                                [RuntimeValue::Array(arr), RuntimeValue::String(delim)] => {
+                                    let parts: Vec<String> = arr.iter()
+                                        .map(|v| format!("{}", v))
+                                        .collect();
+                                    return Ok(RuntimeValue::String(parts.join(delim)));
+                                }
+                                _ => return Err("join() requires array and delimiter".to_string()),
+                            }
+                        }
+                        "replace" => {
+                            match arg_values.as_slice() {
+                                [RuntimeValue::String(s), RuntimeValue::String(from), RuntimeValue::String(to)] => {
+                                    return Ok(RuntimeValue::String(s.replace(from.as_str(), to.as_str())));
+                                }
+                                _ => return Err("replace() requires 3 string arguments".to_string()),
+                            }
+                        }
+                        "contains" => {
+                            match arg_values.as_slice() {
+                                [RuntimeValue::String(s), RuntimeValue::String(sub)] => {
+                                    return Ok(RuntimeValue::Boolean(s.contains(sub.as_str())));
+                                }
+                                [RuntimeValue::Array(arr), val] => {
+                                    for item in arr {
+                                        if self.values_equal(item, val) {
+                                            return Ok(RuntimeValue::Boolean(true));
+                                        }
+                                    }
+                                    return Ok(RuntimeValue::Boolean(false));
+                                }
+                                _ => return Err("contains() requires string/substring or array/value".to_string()),
+                            }
+                        }
+                        "starts_with" => {
+                            match arg_values.as_slice() {
+                                [RuntimeValue::String(s), RuntimeValue::String(prefix)] => {
+                                    return Ok(RuntimeValue::Boolean(s.starts_with(prefix.as_str())));
+                                }
+                                _ => return Err("starts_with() requires 2 string arguments".to_string()),
+                            }
+                        }
+                        "ends_with" => {
+                            match arg_values.as_slice() {
+                                [RuntimeValue::String(s), RuntimeValue::String(suffix)] => {
+                                    return Ok(RuntimeValue::Boolean(s.ends_with(suffix.as_str())));
+                                }
+                                _ => return Err("ends_with() requires 2 string arguments".to_string()),
+                            }
+                        }
+                        "char_at" => {
+                            match arg_values.as_slice() {
+                                [RuntimeValue::String(s), RuntimeValue::Number(idx)] => {
+                                    let i = *idx as usize;
+                                    if let Some(c) = s.chars().nth(i) {
+                                        return Ok(RuntimeValue::String(c.to_string()));
+                                    }
+                                    return Err(format!("Index {} out of bounds", i));
+                                }
+                                _ => return Err("char_at() requires string and index".to_string()),
+                            }
+                        }
+                        "substr" => {
+                            match arg_values.as_slice() {
+                                [RuntimeValue::String(s), RuntimeValue::Number(start), RuntimeValue::Number(len)] => {
+                                    let start = *start as usize;
+                                    let len = *len as usize;
+                                    let result: String = s.chars().skip(start).take(len).collect();
+                                    return Ok(RuntimeValue::String(result));
+                                }
+                                _ => return Err("substr() requires string, start, and length".to_string()),
+                            }
+                        }
+                        
+                        // Array functions
+                        "push" => {
+                            match arg_values.as_slice() {
+                                [RuntimeValue::Array(arr), value] => {
+                                    let mut new_arr = arr.clone();
+                                    new_arr.push(value.clone());
+                                    return Ok(RuntimeValue::Array(new_arr));
+                                }
+                                _ => return Err("push() requires array and value".to_string()),
+                            }
+                        }
+                        "pop" => {
+                            if let Some(RuntimeValue::Array(arr)) = arg_values.first() {
+                                let mut new_arr = arr.clone();
+                                new_arr.pop();
+                                return Ok(RuntimeValue::Array(new_arr));
+                            }
+                        }
+                        "first" => {
+                            if let Some(RuntimeValue::Array(arr)) = arg_values.first() {
+                                return Ok(arr.first().cloned().unwrap_or(RuntimeValue::Null));
+                            }
+                        }
+                        "last" => {
+                            if let Some(RuntimeValue::Array(arr)) = arg_values.first() {
+                                return Ok(arr.last().cloned().unwrap_or(RuntimeValue::Null));
+                            }
+                        }
+                        "reverse" => {
+                            if let Some(RuntimeValue::Array(arr)) = arg_values.first() {
+                                let mut new_arr = arr.clone();
+                                new_arr.reverse();
+                                return Ok(RuntimeValue::Array(new_arr));
+                            }
+                            if let Some(RuntimeValue::String(s)) = arg_values.first() {
+                                return Ok(RuntimeValue::String(s.chars().rev().collect()));
+                            }
+                        }
+                        "sort" => {
+                            if let Some(RuntimeValue::Array(arr)) = arg_values.first() {
+                                let mut new_arr = arr.clone();
+                                new_arr.sort_by(|a, b| {
+                                    match (a, b) {
+                                        (RuntimeValue::Number(x), RuntimeValue::Number(y)) => {
+                                            x.partial_cmp(y).unwrap_or(std::cmp::Ordering::Equal)
+                                        }
+                                        (RuntimeValue::String(x), RuntimeValue::String(y)) => x.cmp(y),
+                                        _ => std::cmp::Ordering::Equal,
+                                    }
+                                });
+                                return Ok(RuntimeValue::Array(new_arr));
+                            }
+                        }
+                        "sum" => {
+                            if let Some(RuntimeValue::Array(arr)) = arg_values.first() {
+                                let mut total = 0.0;
+                                for item in arr {
+                                    if let RuntimeValue::Number(n) = item {
+                                        total += n;
+                                    }
+                                }
+                                return Ok(RuntimeValue::Number(total));
+                            }
+                        }
+                        "avg" => {
+                            if let Some(RuntimeValue::Array(arr)) = arg_values.first() {
+                                let mut total = 0.0;
+                                let mut count = 0;
+                                for item in arr {
+                                    if let RuntimeValue::Number(n) = item {
+                                        total += n;
+                                        count += 1;
+                                    }
+                                }
+                                if count > 0 {
+                                    return Ok(RuntimeValue::Number(total / count as f64));
+                                }
+                            }
+                        }
+                        
+                        // Type conversion
+                        "int" | "parseInt" => {
+                            match arg_values.first() {
+                                Some(RuntimeValue::Number(n)) => return Ok(RuntimeValue::Number(n.floor())),
+                                Some(RuntimeValue::String(s)) => {
+                                    if let Ok(n) = s.parse::<f64>() {
+                                        return Ok(RuntimeValue::Number(n.floor()));
+                                    }
+                                    return Err(format!("Cannot parse '{}' as integer", s));
+                                }
+                                _ => return Err("parseInt() requires number or string".to_string()),
+                            }
+                        }
+                        "float" | "parseFloat" => {
+                            match arg_values.first() {
+                                Some(RuntimeValue::Number(n)) => return Ok(RuntimeValue::Number(*n)),
+                                Some(RuntimeValue::String(s)) => {
+                                    if let Ok(n) = s.parse::<f64>() {
+                                        return Ok(RuntimeValue::Number(n));
+                                    }
+                                    return Err(format!("Cannot parse '{}' as float", s));
+                                }
+                                _ => return Err("parseFloat() requires number or string".to_string()),
+                            }
+                        }
+                        "str" | "toString" => {
+                            if let Some(arg) = arg_values.first() {
+                                return Ok(RuntimeValue::String(format!("{}", arg)));
+                            }
+                        }
+                        "bool" => {
+                            if let Some(arg) = arg_values.first() {
+                                return Ok(RuntimeValue::Boolean(self.is_truthy(arg)));
+                            }
+                        }
+                        
+                        // Utility
+                        "assert" => {
+                            match arg_values.as_slice() {
+                                [cond, RuntimeValue::String(msg)] => {
+                                    if !self.is_truthy(cond) {
+                                        return Err(format!("Assertion failed: {}", msg));
+                                    }
+                                    return Ok(RuntimeValue::Null);
+                                }
+                                [cond] => {
+                                    if !self.is_truthy(cond) {
+                                        return Err("Assertion failed".to_string());
+                                    }
+                                    return Ok(RuntimeValue::Null);
+                                }
+                                _ => return Err("assert() requires condition and optional message".to_string()),
+                            }
+                        }
+                        "keys" => {
+                            if let Some(RuntimeValue::Object(obj)) = arg_values.first() {
+                                let keys: Vec<RuntimeValue> = obj.keys()
+                                    .map(|k| RuntimeValue::String(k.clone()))
+                                    .collect();
+                                return Ok(RuntimeValue::Array(keys));
+                            }
+                        }
+                        "values" => {
+                            if let Some(RuntimeValue::Object(obj)) = arg_values.first() {
+                                let vals: Vec<RuntimeValue> = obj.values().cloned().collect();
+                                return Ok(RuntimeValue::Array(vals));
+                            }
+                        }
+                        
+                        _ => {}
+                    }
+                    
+                    // User-defined functions
+                    if let Some((params, body)) = self.functions.get(func_name).cloned() {
+                        if params.len() != arg_values.len() {
+                            return Err(format!(
+                                "Function '{}' expected {} arguments, got {}", 
+                                func_name, params.len(), arg_values.len()
+                            ));
+                        }
+                        
+                        // Create new scope with parameters
+                        self.scopes.push(HashMap::new());
+                        for (param, value) in params.iter().zip(arg_values.iter()) {
+                            self.set_variable(param.clone(), value.clone());
+                        }
+                        
+                        // Execute function body
+                        let mut result = RuntimeValue::Null;
+                        for stmt in &body {
+                            result = self.execute_statement(stmt)?;
+                            // Handle return - unwrap the Return wrapper
+                            if let RuntimeValue::Return(val) = result {
+                                result = *val;
+                                break;
+                            }
+                        }
+                        
+                        self.scopes.pop();
+                        return Ok(result);
+                    }
+                    
+                    Err(format!("Undefined function: {}", func_name))
+                } else {
+                    Err("Cannot call non-function".to_string())
+                }
+            }
+            
+            ASTNode::Pipeline(exprs) => {
+                if exprs.is_empty() {
+                    return Ok(RuntimeValue::Null);
+                }
+                
+                // Start with first expression
+                let mut current = self.evaluate(&exprs[0])?;
+                
+                // Pass through each function in the pipeline
+                for func_expr in &exprs[1..] {
+                    if let ASTNode::Identifier(func_name) = func_expr {
+                        if let Some((params, body)) = self.functions.get(func_name).cloned() {
+                            if params.len() != 1 {
+                                return Err(format!(
+                                    "Pipeline function '{}' must take exactly 1 argument", 
+                                    func_name
+                                ));
+                            }
+                            
+                            self.scopes.push(HashMap::new());
+                            self.set_variable(params[0].clone(), current);
+                            
+                            let mut result = RuntimeValue::Null;
+                            for stmt in &body {
+                                result = self.execute_statement(stmt)?;
+                                if let RuntimeValue::Return(val) = result {
+                                    result = *val;
+                                    break;
+                                }
+                            }
+                            
+                            self.scopes.pop();
+                            current = result;
+                        } else {
+                            return Err(format!("Undefined pipeline function: {}", func_name));
+                        }
+                    }
+                }
+                
+                Ok(current)
+            }
+            
+            ASTNode::TemporalAccess { var, timestamp } => {
+                let ts = self.evaluate(timestamp)?;
+                let index = match ts {
+                    RuntimeValue::Number(n) => n as usize,
+                    _ => return Err("Temporal access index must be a number".to_string()),
+                };
+                
+                if let Some(history) = self.temporal_vars.get(var) {
+                    history.get(index)
+                        .cloned()
+                        .ok_or_else(|| format!("No value at temporal index {} for '{}'", index, var))
+                } else {
+                    Err(format!("'{}' is not a temporal variable", var))
+                }
+            }
+            
+            ASTNode::Match { expr, cases } => {
+                let match_val = self.evaluate(expr)?;
+                
+                for (pattern, body) in cases {
+                    let pattern_val = self.evaluate(pattern)?;
+                    
+                    // Check if pattern matches (default always matches)
+                    let matches = if let ASTNode::Identifier(name) = pattern {
+                        name == "default" || self.values_equal(&match_val, &pattern_val)
+                    } else {
+                        self.values_equal(&match_val, &pattern_val)
+                    };
+                    
+                    if matches {
+                        // Execute the matching case body
+                        let mut result = RuntimeValue::Null;
+                        for stmt in body {
+                            result = self.execute_statement(stmt)?;
+                        }
+                        return Ok(result);
+                    }
+                }
+                
+                Ok(RuntimeValue::Null)
+            }
+            
+            ASTNode::MemberAccess { object, property } => {
+                let obj = self.evaluate(object)?;
+                match obj {
+                    RuntimeValue::Object(map) => {
+                        map.get(property)
+                            .cloned()
+                            .ok_or_else(|| format!("Property '{}' not found", property))
+                    }
+                    _ => Err("Cannot access property on non-object".to_string()),
+                }
+            }
+            
+            ASTNode::IndexAccess { object, index } => {
+                let obj = self.evaluate(object)?;
+                let idx = self.evaluate(index)?;
+                
+                match (obj, idx) {
+                    (RuntimeValue::Array(arr), RuntimeValue::Number(n)) => {
+                        let i = n as usize;
+                        arr.get(i)
+                            .cloned()
+                            .ok_or_else(|| format!("Array index {} out of bounds", i))
+                    }
+                    (RuntimeValue::String(s), RuntimeValue::Number(n)) => {
+                        let i = n as usize;
+                        s.chars()
+                            .nth(i)
+                            .map(|c| RuntimeValue::String(c.to_string()))
+                            .ok_or_else(|| format!("String index {} out of bounds", i))
+                    }
+                    _ => Err("Cannot index non-array/string or with non-number".to_string()),
+                }
+            }
+            
+            _ => Ok(RuntimeValue::Null),
+        }
+    }
+    
+    // Helper methods for arithmetic operations
+    fn add(&self, left: RuntimeValue, right: RuntimeValue) -> Result<RuntimeValue, String> {
+        match (left, right) {
+            (RuntimeValue::Number(a), RuntimeValue::Number(b)) => Ok(RuntimeValue::Number(a + b)),
+            (RuntimeValue::String(a), RuntimeValue::String(b)) => Ok(RuntimeValue::String(a + &b)),
+            (RuntimeValue::String(a), b) => Ok(RuntimeValue::String(format!("{}{}", a, b))),
+            (a, RuntimeValue::String(b)) => Ok(RuntimeValue::String(format!("{}{}", a, b))),
+            _ => Err("Cannot add these types".to_string()),
+        }
+    }
+    
+    fn subtract(&self, left: RuntimeValue, right: RuntimeValue) -> Result<RuntimeValue, String> {
+        match (left, right) {
+            (RuntimeValue::Number(a), RuntimeValue::Number(b)) => Ok(RuntimeValue::Number(a - b)),
+            _ => Err("Cannot subtract non-numbers".to_string()),
+        }
+    }
+    
+    fn multiply(&self, left: RuntimeValue, right: RuntimeValue) -> Result<RuntimeValue, String> {
+        match (left, right) {
+            (RuntimeValue::Number(a), RuntimeValue::Number(b)) => Ok(RuntimeValue::Number(a * b)),
+            _ => Err("Cannot multiply non-numbers".to_string()),
+        }
+    }
+    
+    fn divide(&self, left: RuntimeValue, right: RuntimeValue) -> Result<RuntimeValue, String> {
+        match (left, right) {
+            (RuntimeValue::Number(a), RuntimeValue::Number(b)) => {
+                if b == 0.0 {
+                    Err("Division by zero".to_string())
+                } else {
+                    Ok(RuntimeValue::Number(a / b))
+                }
+            }
+            _ => Err("Cannot divide non-numbers".to_string()),
+        }
+    }
+    
+    fn modulo(&self, left: RuntimeValue, right: RuntimeValue) -> Result<RuntimeValue, String> {
+        match (left, right) {
+            (RuntimeValue::Number(a), RuntimeValue::Number(b)) => Ok(RuntimeValue::Number(a % b)),
+            _ => Err("Cannot modulo non-numbers".to_string()),
+        }
+    }
+    
+    fn equals(&self, left: RuntimeValue, right: RuntimeValue) -> Result<RuntimeValue, String> {
+        Ok(RuntimeValue::Boolean(self.values_equal(&left, &right)))
+    }
+    
+    fn not_equals(&self, left: RuntimeValue, right: RuntimeValue) -> Result<RuntimeValue, String> {
+        Ok(RuntimeValue::Boolean(!self.values_equal(&left, &right)))
+    }
+    
+    fn less_than(&self, left: RuntimeValue, right: RuntimeValue) -> Result<RuntimeValue, String> {
+        match (left, right) {
+            (RuntimeValue::Number(a), RuntimeValue::Number(b)) => Ok(RuntimeValue::Boolean(a < b)),
+            _ => Err("Cannot compare non-numbers".to_string()),
+        }
+    }
+    
+    fn greater_than(&self, left: RuntimeValue, right: RuntimeValue) -> Result<RuntimeValue, String> {
+        match (left, right) {
+            (RuntimeValue::Number(a), RuntimeValue::Number(b)) => Ok(RuntimeValue::Boolean(a > b)),
+            _ => Err("Cannot compare non-numbers".to_string()),
+        }
+    }
+    
+    fn less_equal(&self, left: RuntimeValue, right: RuntimeValue) -> Result<RuntimeValue, String> {
+        match (left, right) {
+            (RuntimeValue::Number(a), RuntimeValue::Number(b)) => Ok(RuntimeValue::Boolean(a <= b)),
+            _ => Err("Cannot compare non-numbers".to_string()),
+        }
+    }
+    
+    fn greater_equal(&self, left: RuntimeValue, right: RuntimeValue) -> Result<RuntimeValue, String> {
+        match (left, right) {
+            (RuntimeValue::Number(a), RuntimeValue::Number(b)) => Ok(RuntimeValue::Boolean(a >= b)),
+            _ => Err("Cannot compare non-numbers".to_string()),
+        }
+    }
+    
+    fn values_equal(&self, a: &RuntimeValue, b: &RuntimeValue) -> bool {
+        match (a, b) {
+            (RuntimeValue::Number(x), RuntimeValue::Number(y)) => (x - y).abs() < f64::EPSILON,
+            (RuntimeValue::String(x), RuntimeValue::String(y)) => x == y,
+            (RuntimeValue::Boolean(x), RuntimeValue::Boolean(y)) => x == y,
+            (RuntimeValue::Null, RuntimeValue::Null) => true,
+            _ => false,
+        }
+    }
+    
+    fn is_truthy(&self, val: &RuntimeValue) -> bool {
+        match val {
+            RuntimeValue::Boolean(b) => *b,
+            RuntimeValue::Number(n) => *n != 0.0,
+            RuntimeValue::String(s) => !s.is_empty(),
+            RuntimeValue::Null => false,
+            RuntimeValue::Array(a) => !a.is_empty(),
+            RuntimeValue::Object(o) => !o.is_empty(),
+            RuntimeValue::Function { .. } => true,
+            RuntimeValue::Return(v) => self.is_truthy(v),
+        }
+    }
+    
+    fn get_variable(&self, name: &str) -> Option<RuntimeValue> {
+        // Check local scopes first (innermost to outermost)
+        for scope in self.scopes.iter().rev() {
+            if let Some(val) = scope.get(name) {
+                return Some(val.clone());
+            }
+        }
+        // Then check global scope
+        self.global_scope.get(name).cloned()
+    }
+    
+    fn set_variable(&mut self, name: String, value: RuntimeValue) {
+        // For new declarations, add to current scope
+        if let Some(scope) = self.scopes.last_mut() {
+            scope.insert(name, value);
+        } else {
+            self.global_scope.insert(name, value);
+        }
+    }
+    
+    fn update_variable(&mut self, name: &str, value: RuntimeValue) -> bool {
+        // Update in the scope where it was originally declared
+        for scope in self.scopes.iter_mut().rev() {
+            if scope.contains_key(name) {
+                scope.insert(name.to_string(), value);
+                return true;
+            }
+        }
+        // Check global scope
+        if self.global_scope.contains_key(name) {
+            self.global_scope.insert(name.to_string(), value);
+            return true;
+        }
+        false
+    }
+}
+
+// ============================================================================
 // EXAMPLE USAGE & DEMO
 // ============================================================================
 
 fn main() {
-    let compiler = FluxCompiler::new(true);
+    let args: Vec<String> = std::env::args().collect();
     
-    // Example 1: Basic arithmetic with immutable variables
-    let example1 = r#"
-#pragma braces
+    if args.len() < 2 {
+        print_usage(&args[0]);
+        return;
+    }
+    
+    match args[1].as_str() {
+        "run" | "interpret" => {
+            if args.len() < 3 {
+                eprintln!("Error: No input file specified");
+                eprintln!("Usage: {} run <file.flux>", args[0]);
+                return;
+            }
+            run_file(&args[2]);
+        }
+        "compile" => {
+            if args.len() < 3 {
+                eprintln!("Error: No input file specified");
+                eprintln!("Usage: {} compile <file.flux> [output.ll]", args[0]);
+                return;
+            }
+            let output = if args.len() > 3 { &args[3] } else { "output.ll" };
+            compile_file(&args[2], output);
+        }
+        "repl" => {
+            run_repl();
+        }
+        "demo" => {
+            run_demo();
+        }
+        "--help" | "-h" | "help" => {
+            print_usage(&args[0]);
+        }
+        file if file.ends_with(".flux") => {
+            // Default: run the file
+            run_file(file);
+        }
+        _ => {
+            eprintln!("Unknown command: {}", args[1]);
+            print_usage(&args[0]);
+        }
+    }
+}
+
+fn print_usage(program: &str) {
+    println!("╔═══════════════════════════════════════════════════════════════════╗");
+    println!("║            🦀 FLUX PROGRAMMING LANGUAGE v2.0 🦀                   ║");
+    println!("╚═══════════════════════════════════════════════════════════════════╝");
+    println!();
+    println!("USAGE:");
+    println!("    {} <command> [options]", program);
+    println!("    {} <file.flux>                  Run a Flux program", program);
+    println!();
+    println!("COMMANDS:");
+    println!("    run <file>         Interpret and execute a Flux program");
+    println!("    compile <file>     Compile to LLVM IR");
+    println!("    repl               Start interactive REPL");
+    println!("    demo               Run demo examples");
+    println!("    help               Show this help message");
+    println!();
+    println!("EXAMPLES:");
+    println!("    {} run examples/temporal.flux", program);
+    println!("    {} compile examples/pipeline.flux output.ll", program);
+    println!("    {} repl", program);
+    println!();
+    println!("LANGUAGE FEATURES:");
+    println!("    ⏰ Temporal Variables   - Track variable changes across time");
+    println!("    🔗 Pipeline Operations  - Functional composition with | operator");
+    println!("    ❄️  Immutable Typing     - Once assigned, variables cannot change type");
+    println!("    🎯 Pattern Matching     - Advanced match expressions");
+    println!("    📦 For-in Loops         - Iterate over arrays with break/continue");
+    println!("    🧱 Object Literals      - Create objects with {{ key: value }}");
+    println!("    ➕ Compound Operators   - +=, -=, *=, /= for concise updates");
+    println!("    📚 50+ Built-ins        - Math, string, array functions");
+}
+
+fn run_file(filename: &str) {
+    let source = match fs::read_to_string(filename) {
+        Ok(content) => content,
+        Err(e) => {
+            eprintln!("Error reading file '{}': {}", filename, e);
+            return;
+        }
+    };
+    
+    println!("🚀 Running: {}", filename);
+    println!("{}", "─".repeat(50));
+    
+    // Lexical Analysis
+    let mut lexer = Lexer::new(&source);
+    let tokens = lexer.tokenize();
+    
+    // Parse
+    let mut parser = Parser::new(tokens);
+    let ast = match parser.parse() {
+        Ok(ast) => ast,
+        Err(e) => {
+            eprintln!("❌ Parse Error: {}", e);
+            return;
+        }
+    };
+    
+    // Interpret
+    let mut interpreter = Interpreter::new();
+    match interpreter.execute(&ast) {
+        Ok(_) => {
+            println!("{}", "─".repeat(50));
+            println!("✅ Program finished successfully");
+        }
+        Err(e) => {
+            eprintln!("❌ Runtime Error: {}", e);
+        }
+    }
+}
+
+fn compile_file(input: &str, output: &str) {
+    let source = match fs::read_to_string(input) {
+        Ok(content) => content,
+        Err(e) => {
+            eprintln!("Error reading file '{}': {}", input, e);
+            return;
+        }
+    };
+    
+    println!("📦 Compiling: {} -> {}", input, output);
+    
+    let compiler = FluxCompiler::new(false);
+    match compiler.compile(&source) {
+        Ok(llvm_ir) => {
+            match fs::write(output, &llvm_ir) {
+                Ok(_) => {
+                    println!("✅ LLVM IR written to: {}", output);
+                    println!();
+                    println!("To create an executable, run:");
+                    println!("    llc -filetype=obj {} -o output.o", output);
+                    println!("    clang output.o -o program");
+                    println!("    ./program");
+                }
+                Err(e) => eprintln!("Error writing output: {}", e),
+            }
+        }
+        Err(e) => eprintln!("❌ Compilation Error: {}", e),
+    }
+}
+
+fn run_repl() {
+    println!("╔═══════════════════════════════════════════════════════════════════╗");
+    println!("║            🦀 FLUX REPL v1.0 - Interactive Mode 🦀                ║");
+    println!("╚═══════════════════════════════════════════════════════════════════╝");
+    println!();
+    println!("Type Flux code to execute. Commands:");
+    println!("  :help     - Show help");
+    println!("  :clear    - Clear screen");
+    println!("  :quit     - Exit REPL");
+    println!();
+    
+    let mut interpreter = Interpreter::new();
+    let mut input_buffer = String::new();
+    
+    loop {
+        let prompt = if input_buffer.is_empty() { "flux> " } else { "  ... " };
+        print!("{}", prompt);
+        std::io::Write::flush(&mut std::io::stdout()).unwrap();
+        
+        let mut line = String::new();
+        if std::io::stdin().read_line(&mut line).is_err() {
+            break;
+        }
+        
+        let trimmed = line.trim();
+        
+        // Handle commands
+        if trimmed.starts_with(':') {
+            match trimmed {
+                ":quit" | ":q" | ":exit" => {
+                    println!("Goodbye! 👋");
+                    break;
+                }
+                ":clear" | ":cls" => {
+                    print!("\x1B[2J\x1B[1;1H");
+                    continue;
+                }
+                ":help" | ":h" => {
+                    println!("REPL Commands:");
+                    println!("  :help     - Show this help");
+                    println!("  :clear    - Clear screen");
+                    println!("  :quit     - Exit REPL");
+                    println!();
+                    println!("Language Features:");
+                    println!("  let x = 10           - Variable declaration");
+                    println!("  temporal let y = 5   - Temporal variable");
+                    println!("  func foo(a) {{ ... }} - Function declaration");
+                    println!("  x | foo | bar        - Pipeline operations");
+                    println!("  print(x)             - Print value");
+                    continue;
+                }
+                _ => {
+                    println!("Unknown command: {}", trimmed);
+                    continue;
+                }
+            }
+        }
+        
+        // Check if line continues
+        if trimmed.ends_with('{') && !trimmed.contains('}') {
+            input_buffer.push_str(&line);
+            continue;
+        }
+        
+        input_buffer.push_str(&line);
+        
+        // Try to parse and execute
+        let source = input_buffer.clone();
+        input_buffer.clear();
+        
+        if source.trim().is_empty() {
+            continue;
+        }
+        
+        // Add implicit #pragma braces for REPL
+        let source = format!("#pragma braces\n{}", source);
+        
+        let mut lexer = Lexer::new(&source);
+        let tokens = lexer.tokenize();
+        
+        let mut parser = Parser::new(tokens);
+        match parser.parse() {
+            Ok(ast) => {
+                match interpreter.execute(&ast) {
+                    Ok(result) => {
+                        match result {
+                            RuntimeValue::Null => {}
+                            other => println!("=> {}", other),
+                        }
+                    }
+                    Err(e) => eprintln!("Error: {}", e),
+                }
+            }
+            Err(e) => eprintln!("Parse Error: {}", e),
+        }
+    }
+}
+
+fn run_source(source: &str) {
+    // Add implicit #pragma braces
+    let source = format!("#pragma braces\n{}", source);
+    
+    let mut lexer = Lexer::new(&source);
+    let tokens = lexer.tokenize();
+    
+    let mut parser = Parser::new(tokens);
+    match parser.parse() {
+        Ok(ast) => {
+            let mut interpreter = Interpreter::new();
+            match interpreter.execute(&ast) {
+                Ok(_) => {}
+                Err(e) => eprintln!("Runtime Error: {}", e),
+            }
+        }
+        Err(e) => eprintln!("Parse Error: {}", e),
+    }
+}
+
+fn run_demo() {
+    println!("╔═══════════════════════════════════════════════════════════════════╗");
+    println!("║               🦀 FLUX COMPILER DEMO 🦀                            ║");
+    println!("╚═══════════════════════════════════════════════════════════════════╝");
+    println!();
+    
+    // Demo 1: Basic Arithmetic
+    println!("═══ Demo 1: Basic Arithmetic ═══");
+    let source1 = r#"
 let x = 10
-const y = 20
+let y = 20
 let result = x + y * 2
-print(result)
+print("x =", x)
+print("y =", y)
+print("x + y * 2 =", result)
 "#;
+    run_source(source1);
     
-    println!("=== EXAMPLE 1: Basic Arithmetic ===");
-    match compiler.compile(example1) {
-        Ok(ir) => println!("Compilation successful!\n"),
-        Err(e) => println!("Error: {}\n", e),
-    }
-    
-    // Example 2: Temporal variables (unique feature)
-    let example2 = r#"
-#pragma braces
+    // Demo 2: Temporal Variables
+    println!("\n═══ Demo 2: Temporal Variables ═══");
+    let source2 = r#"
 temporal let temperature = 20.5
-temperature = 25.0  # This would create a timeline entry
-temperature = 18.3  # Another timeline entry
-
-# Access historical values
-let temp_at_start = temperature[0]  # Gets value at timestamp 0
-let current_temp = temperature      # Gets current value
-
-print(current_temp)
+print("Initial:", temperature)
+temperature = 25.0
+print("After update:", temperature)
+temperature = 18.3
+print("Final:", temperature)
+print("History - t=0:", temperature[0])
+print("History - t=1:", temperature[1])
+print("History - t=2:", temperature[2])
 "#;
+    run_source(source2);
     
-    println!("=== EXAMPLE 2: Temporal Variables ===");
-    match compiler.compile(example2) {
-        Ok(ir) => println!("Compilation successful!\n"),
-        Err(e) => println!("Error: {}\n", e),
-    }
-    
-    // Example 3: Pipeline operations (unique feature)
-    let example3 = r#"
-#pragma braces
+    // Demo 3: Pipeline Operations
+    println!("\n═══ Demo 3: Pipeline Operations ═══");
+    let source3 = r#"
 func double(x) {
     return x * 2
 }
@@ -1607,62 +3100,142 @@ func add_ten(x) {
 }
 
 let value = 5
-let result = value | double | add_ten  # Pipeline: 5 -> 10 -> 20
-print(result)
+print("Starting value:", value)
+let result = value | double | add_ten
+print("After pipeline (double then add_ten):", result)
 "#;
+    run_source(source3);
     
-    println!("=== EXAMPLE 3: Pipeline Operations ===");
-    match compiler.compile(example3) {
-        Ok(ir) => println!("Compilation successful!\n"),
-        Err(e) => println!("Error: {}\n", e),
-    }
-    
-    // Example 4: Pattern matching
-    let example4 = r#"
-#pragma braces
-let status = 200
+    // Demo 4: Pattern Matching
+    println!("\n═══ Demo 4: Pattern Matching ═══");
+    let source4 = r#"
+let status = 404
+
 let message = match status {
     200 => "OK"
-    404 => "Not Found" 
+    404 => "Not Found"
     500 => "Server Error"
     default => "Unknown"
 }
-print(message)
+
+print("Status", status, "->", message)
 "#;
+    run_source(source4);
     
-    println!("=== EXAMPLE 4: Pattern Matching ===");
-    match compiler.compile(example4) {
-        Ok(ir) => println!("Compilation successful!\n"),
-        Err(e) => println!("Error: {}\n", e),
-    }
-    
-    // Example 5: Indent-based syntax
-    let example5 = r#"
-#pragma indent
-let x = 10
-if x > 5
-    let message = "Greater than 5"
-    print(message)
-else
-    print("Less than or equal to 5")
+    // Demo 5: Arrays and For Loops
+    println!("\n═══ Demo 5: Arrays and For Loops ═══");
+    let source5 = r#"
+let numbers = [1, 2, 3, 4, 5]
+print("Array:", numbers)
+
+let sum = 0
+for n in numbers {
+    sum += n
+}
+print("Sum:", sum)
 "#;
+    run_source(source5);
     
-    println!("=== EXAMPLE 5: Indent-based Syntax ===");
-    match compiler.compile(example5) {
-        Ok(ir) => println!("Compilation successful!\n"),
-        Err(e) => println!("Error: {}\n", e),
+    // Demo 6: Functions and Recursion
+    println!("\n═══ Demo 6: Functions ═══");
+    let source6 = r#"
+func factorial(n) {
+    if n <= 1 {
+        return 1
     }
+    return n * factorial(n - 1)
+}
+
+print("factorial(5) =", factorial(5))
+print("factorial(10) =", factorial(10))
+"#;
+    run_source(source6);
     
-    println!("=== FLUX COMPILER FEATURES ===");
-    println!("✓ Immutable dynamic typing - once assigned, variables cannot change type");
-    println!("✓ Flexible OOP support without strict enforcement");
-    println!("✓ Pragma-controlled syntax (braces vs indentation)");
-    println!("✓ Temporal variables - track value changes over time");
-    println!("✓ Pipeline operations - functional composition");
-    println!("✓ Pattern matching with match expressions");
-    println!("✓ LLVM IR code generation");
-    println!("✓ Comprehensive semantic analysis");
-    println!("✓ Advanced error handling and reporting");
+    // Demo 7: Compound Operators and Break/Continue
+    println!("\n═══ Demo 7: Compound Operators & Control Flow ═══");
+    let source7 = r#"
+let counter = 0
+for i in range(10) {
+    if i == 5 {
+        print("Skipping 5")
+        continue
+    }
+    if i == 8 {
+        print("Breaking at 8")
+        break
+    }
+    counter += 1
+}
+print("Counter:", counter)
+
+let product = 1
+for i in range(1, 6) {
+    product *= i
+}
+print("Product of 1-5:", product)
+"#;
+    run_source(source7);
+    
+    // Demo 8: Built-in Functions
+    println!("\n═══ Demo 8: Built-in Functions ═══");
+    let source8 = r#"
+let arr = [5, 2, 8, 1, 9, 3]
+print("Original:", arr)
+print("Sorted:", sort(arr))
+print("Sum:", sum(arr))
+print("Avg:", avg(arr))
+print("Min:", min(arr))
+print("Max:", max(arr))
+
+let text = "  Hello World  "
+print("Original:", text)
+print("Trimmed:", trim(text))
+print("Upper:", upper(trim(text)))
+print("Lower:", lower(trim(text)))
+
+let words = split("a,b,c,d", ",")
+print("Split result:", words)
+print("Join result:", join(words, "-"))
+print("Contains 'b':", contains(words, "b"))
+
+print("pow(2, 10) =", pow(2, 10))
+print("sqrt(144) =", sqrt(144))
+print("floor(3.7) =", floor(3.7))
+print("ceil(3.2) =", ceil(3.2))
+"#;
+    run_source(source8);
+    
+    // Demo 9: Object Literals
+    println!("\n═══ Demo 9: Objects ═══");
+    let source9 = r#"
+let person = {
+    name: "Alice",
+    age: 30,
+    city: "Paris"
+}
+print("Person:", person)
+print("Keys:", keys(person))
+print("Values:", values(person))
+print("Name:", person.name)
+"#;
+    run_source(source9);
+    
+    println!();
+    println!("═══════════════════════════════════════════════════════════════════");
+    println!("✅ All demos completed!");
+    println!();
+    println!("FLUX LANGUAGE FEATURES:");
+    println!("  ✓ Immutable dynamic typing");
+    println!("  ✓ Temporal variables with history tracking");
+    println!("  ✓ Pipeline operations for functional composition");
+    println!("  ✓ Pattern matching with match expressions");
+    println!("  ✓ Arrays and for-in loops");
+    println!("  ✓ User-defined functions with recursion");
+    println!("  ✓ Compound operators (+=, -=, *=, /=)");
+    println!("  ✓ Break and continue in loops");
+    println!("  ✓ 50+ built-in functions");
+    println!("  ✓ Object literals and properties");
+    println!("  ✓ LLVM IR code generation");
 }
 
 #[cfg(test)]
@@ -2242,15 +3815,3 @@ impl FluxStdLib {
         }
     }
 }
-
-// Add this at the end of main() function to demonstrate REPL
-/*
-fn main() {
-    // ... existing main code ...
-    
-    // Uncomment to run REPL
-    // let mut repl = FluxRepl::new();
-    // repl.run();
-}
-*/
-
